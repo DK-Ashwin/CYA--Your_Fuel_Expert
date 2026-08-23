@@ -397,8 +397,8 @@ export default function App() {
       {/* Header */}
       <header className="app-header">
         <div className="logo-group">
-          <Fuel size={32} className="logo-icon" />
-          <h1 className="logo-text">Fuel Splitter</h1>
+          <img src="/favicon.png" alt="CYA! Logo" style={{ height: '36px', borderRadius: '4px', filter: 'drop-shadow(0 0 8px var(--accent-cyan))' }} />
+          <h1 className="logo-text">CYA!</h1>
           <span className="logo-badge">UPI Ready</span>
         </div>
       </header>
