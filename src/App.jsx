@@ -40,6 +40,14 @@ export default function App() {
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [enteredPin, setEnteredPin] = useState('');
   const [pinError, setPinError] = useState('');
+  const [pinAttempts, setPinAttempts] = useState(() => {
+    return parseInt(localStorage.getItem('pin_attempts') || '0', 10);
+  });
+  const [lockoutTimeLeft, setLockoutTimeLeft] = useState(() => {
+    const lockoutUntil = parseInt(localStorage.getItem('pin_lockout_until') || '0', 10);
+    const timeLeft = Math.ceil((lockoutUntil - Date.now()) / 1000);
+    return timeLeft > 0 ? timeLeft : 0;
+  });
   
   // App system state
   const [history, setHistory] = useState([]);
@@ -77,9 +85,30 @@ export default function App() {
     }
   }, []);
 
+  // Timer countdown for PIN lockout
+  useEffect(() => {
+    if (lockoutTimeLeft <= 0) return;
+
+    const timer = setInterval(() => {
+      setLockoutTimeLeft(prev => {
+        const next = prev - 1;
+        if (next <= 0) {
+          clearInterval(timer);
+          setPinAttempts(0);
+          localStorage.removeItem('pin_attempts');
+          localStorage.removeItem('pin_lockout_until');
+          return 0;
+        }
+        return next;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [lockoutTimeLeft]);
+
   // Update UPI ID dynamically based on selected provider and input
   useEffect(() => {
-    if (upiProvider === 'nill') {
+    if (upiProvider === 'nill' || collectorName === 'NILL') {
       setUpiId('');
       return;
     }
@@ -106,7 +135,7 @@ export default function App() {
         setUpiId(`${base}@upi`);
       }
     }
-  }, [upiProvider, upiInput]);
+  }, [upiProvider, upiInput, collectorName]);
 
   // Handle calculations
   const parsedMileage = parseFloat(mileage) || 0;
@@ -120,7 +149,7 @@ export default function App() {
   const totalTravelersCount = travelers.length;
   const paidCount = travelers.filter(t => paidTravelers[t]).length;
   const isTripCompleted = totalTravelersCount > 0 && paidCount === totalTravelersCount;
-  const isLocked = isTripCompleted && !isUnlocked;
+  const isLocked = isTripCompleted && pin.length === 4 && !isUnlocked;
 
   // Build UPI string
   const upiString = upiId 
@@ -219,12 +248,12 @@ export default function App() {
   const handleCalculateAndSave = () => {
     if (travelers.length === 0) return;
 
-    if (upiProvider !== 'nill' && !upiInput.trim()) {
-      alert(`Please enter a valid ${upiProvider === 'custom' ? 'UPI ID' : 'Mobile Number'} or select NILL.`);
+    if (collectorName !== 'NILL' && upiProvider !== 'nill' && !upiInput.trim()) {
+      alert(`Please enter a valid ${upiProvider === 'custom' ? 'UPI ID' : 'Mobile Number'}.`);
       return;
     }
 
-    if (pin.length !== 4) {
+    if (collectorName !== 'NILL' && pin.length !== 4) {
       alert('Please set a 4-digit security PIN in Step 3 before generating the QR code.');
       return;
     }
@@ -342,6 +371,7 @@ export default function App() {
       }
     } else {
       setUpiInput('');
+      setUpiProvider('phonepe');
     }
 
     // Switch view to calculator and jump directly to Step 4 (UPI UI)
@@ -619,16 +649,19 @@ export default function App() {
                     {travelers.length === 0 ? (
                       <option value="">Add travelers first...</option>
                     ) : (
-                      travelers.map((name, i) => (
-                        <option key={i} value={name}>{name}</option>
-                      ))
+                      <>
+                        {travelers.map((name, i) => (
+                          <option key={i} value={name}>{name}</option>
+                        ))}
+                        <option value="NILL">NILL (No UPI Collection)</option>
+                      </>
                     )}
                   </select>
                 </div>
 
-                {travelers.length > 0 && (
+                {travelers.length > 0 && collectorName !== 'NILL' && (
                   <>
-                    <div className="upi-setup-row" style={{ gridTemplateColumns: upiProvider === 'nill' ? '1fr' : '1fr 1fr' }}>
+                    <div className="upi-setup-row" style={{ gridTemplateColumns: '1fr 1fr' }}>
                       <div className="form-group" style={{ marginBottom: 0 }}>
                         <label className="form-label" htmlFor="provider-select">UPI App / ID</label>
                         <select
@@ -644,29 +677,26 @@ export default function App() {
                           <option value="paytm">Paytm</option>
                           <option value="bhim">BHIM / UPI</option>
                           <option value="custom">Custom UPI ID</option>
-                          <option value="nill">NILL</option>
                         </select>
                       </div>
 
-                      {upiProvider !== 'nill' && (
-                        <div className="form-group" style={{ marginBottom: 0 }}>
-                          <label className="form-label" htmlFor="upi-input">
-                            {upiProvider === 'custom' ? 'Enter UPI ID' : 'Mobile Number'}
-                          </label>
-                          <input
-                            id="upi-input"
-                            type="text"
-                            className="form-input form-input-no-icon"
-                            placeholder={
-                              upiProvider === 'custom' 
-                                ? 'e.g. name@axisbank' 
-                                : 'e.g. 9876543210'
-                            }
-                            value={upiInput}
-                            onChange={(e) => setUpiInput(e.target.value)}
-                          />
-                        </div>
-                      )}
+                      <div className="form-group" style={{ marginBottom: 0 }}>
+                        <label className="form-label" htmlFor="upi-input">
+                          {upiProvider === 'custom' ? 'Enter UPI ID' : 'Mobile Number'}
+                        </label>
+                        <input
+                          id="upi-input"
+                          type="text"
+                          className="form-input form-input-no-icon"
+                          placeholder={
+                            upiProvider === 'custom' 
+                              ? 'e.g. name@axisbank' 
+                              : 'e.g. 9876543210'
+                          }
+                          value={upiInput}
+                          onChange={(e) => setUpiInput(e.target.value)}
+                        />
+                      </div>
                     </div>
 
                     {upiId && (
@@ -788,7 +818,8 @@ export default function App() {
                         type="password"
                         className="lock-input"
                         maxLength={4}
-                        placeholder="••••"
+                        placeholder={lockoutTimeLeft > 0 ? `Locked (${lockoutTimeLeft}s)` : "••••"}
+                        disabled={lockoutTimeLeft > 0}
                         value={enteredPin}
                         onChange={(e) => {
                           const val = e.target.value.replace(/\D/g, '');
@@ -798,18 +829,40 @@ export default function App() {
                           }
                         }}
                       />
-                      {pinError && <span className="lock-error">{pinError}</span>}
+                      {lockoutTimeLeft > 0 ? (
+                        <span className="lock-error">Too many incorrect attempts. Locked out for {lockoutTimeLeft}s.</span>
+                      ) : pinError ? (
+                        <span className="lock-error">{pinError}</span>
+                      ) : null}
                       <button 
                         type="button" 
                         className="btn btn-secondary btn-action-sm" 
                         style={{ width: '100%' }}
+                        disabled={lockoutTimeLeft > 0}
                         onClick={() => {
+                          if (lockoutTimeLeft > 0) return;
+
                           if (enteredPin === pin) {
                             setIsUnlocked(true);
                             setEnteredPin('');
                             setPinError('');
+                            setPinAttempts(0);
+                            localStorage.removeItem('pin_attempts');
+                            localStorage.removeItem('pin_lockout_until');
                           } else {
-                            setPinError('Incorrect PIN');
+                            const newAttempts = pinAttempts + 1;
+                            setPinAttempts(newAttempts);
+                            localStorage.setItem('pin_attempts', newAttempts.toString());
+
+                            if (newAttempts >= 4) {
+                              const lockoutUntil = Date.now() + 60000;
+                              localStorage.setItem('pin_lockout_until', lockoutUntil.toString());
+                              setLockoutTimeLeft(60);
+                              setPinError('Too many incorrect attempts. Locked out for 60 seconds.');
+                              setEnteredPin('');
+                            } else {
+                              setPinError(`Incorrect PIN. (${newAttempts}/4 attempts)`);
+                            }
                           }
                         }}
                       >

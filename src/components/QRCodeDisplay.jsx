@@ -30,14 +30,14 @@ export default function QRCodeDisplay({ upiString, amount, collectorName, upiPro
     );
   }, [upiString]);
 
-  if (upiProvider === 'nill') {
+  if (upiProvider === 'nill' || collectorName === 'NILL') {
     return (
       <div className="qr-placeholder" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', justifyContent: 'center', alignItems: 'center' }}>
         <p style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--accent-cyan)' }}>
           Offline / Cash Split
         </p>
         <p style={{ fontSize: '0.78rem', opacity: 0.8, padding: '0 1.5rem', textAlign: 'center', lineHeight: 1.4 }}>
-          No QR code generated because payment method was set to <strong>NILL</strong>. Track passenger payments manually below.
+          No QR code generated because payment collector was set to <strong>NILL</strong>. Track passenger payments manually below.
         </p>
       </div>
     );

@@ -6,6 +6,36 @@ export default function HistoryLog({ history, onReload, onDelete, onClearAll, on
   const [enteredPins, setEnteredPins] = React.useState({});
   const [pinErrors, setPinErrors] = React.useState({});
   const [showUnlockInputs, setShowUnlockInputs] = React.useState({});
+  const [pinAttempts, setPinAttempts] = React.useState({});
+  const [lockoutTimeLeft, setLockoutTimeLeft] = React.useState({});
+
+  React.useEffect(() => {
+    const activeLockouts = Object.values(lockoutTimeLeft).some(time => time > 0);
+    if (!activeLockouts) return;
+
+    const timer = setInterval(() => {
+      setLockoutTimeLeft(prev => {
+        const next = { ...prev };
+        let updated = false;
+        for (const id in next) {
+          if (next[id] > 0) {
+            next[id] -= 1;
+            updated = true;
+            if (next[id] === 0) {
+              setPinAttempts(attempts => {
+                const nextAttempts = { ...attempts };
+                delete nextAttempts[id];
+                return nextAttempts;
+              });
+            }
+          }
+        }
+        return updated ? next : prev;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [lockoutTimeLeft]);
 
   const formatDate = (dateStr) => {
     try {
@@ -191,7 +221,8 @@ export default function HistoryLog({ history, onReload, onDelete, onClearAll, on
                             type="password"
                             maxLength={4}
                             className="history-unlock-input"
-                            placeholder="PIN"
+                            placeholder={lockoutTimeLeft[item.id] > 0 ? `Locked (${lockoutTimeLeft[item.id]}s)` : "PIN"}
+                            disabled={lockoutTimeLeft[item.id] > 0}
                             value={enteredPins[item.id] || ''}
                             onChange={(e) => {
                               const val = e.target.value.replace(/\D/g, '');
@@ -205,21 +236,42 @@ export default function HistoryLog({ history, onReload, onDelete, onClearAll, on
                             type="button"
                             className="btn btn-secondary btn-action-sm"
                             style={{ padding: '0.2rem 0.5rem', fontSize: '0.75rem', width: 'auto', minWidth: '60px', marginTop: 0 }}
+                            disabled={lockoutTimeLeft[item.id] > 0}
                             onClick={() => {
+                              if (lockoutTimeLeft[item.id] > 0) return;
+
                               if (enteredPins[item.id] === item.pin) {
                                 setUnlockedItems(prev => ({ ...prev, [item.id]: true }));
                                 setEnteredPins(prev => ({ ...prev, [item.id]: '' }));
                                 setShowUnlockInputs(prev => ({ ...prev, [item.id]: false }));
                                 setPinErrors(prev => ({ ...prev, [item.id]: '' }));
+                                setPinAttempts(prev => {
+                                  const next = { ...prev };
+                                  delete next[item.id];
+                                  return next;
+                                });
                               } else {
-                                setPinErrors(prev => ({ ...prev, [item.id]: 'Incorrect PIN' }));
+                                const currentAttempts = (pinAttempts[item.id] || 0) + 1;
+                                setPinAttempts(prev => ({ ...prev, [item.id]: currentAttempts }));
+
+                                if (currentAttempts >= 4) {
+                                  setLockoutTimeLeft(prev => ({ ...prev, [item.id]: 60 }));
+                                  setPinErrors(prev => ({ ...prev, [item.id]: 'Too many incorrect attempts. Locked out for 60 seconds.' }));
+                                  setEnteredPins(prev => ({ ...prev, [item.id]: '' }));
+                                } else {
+                                  setPinErrors(prev => ({ ...prev, [item.id]: `Incorrect PIN. (${currentAttempts}/4 attempts)` }));
+                                }
                               }
                             }}
                           >
                             Unlock
                           </button>
                         </div>
-                        {pinErrors[item.id] && (
+                        {lockoutTimeLeft[item.id] > 0 ? (
+                          <span style={{ fontSize: '0.65rem', color: 'var(--accent-rose)', textAlign: 'center', display: 'block' }}>
+                            Too many incorrect attempts. Locked out for {lockoutTimeLeft[item.id]}s.
+                          </span>
+                        ) : pinErrors[item.id] && (
                           <span style={{ fontSize: '0.65rem', color: 'var(--accent-rose)', textAlign: 'center', display: 'block' }}>
                             {pinErrors[item.id]}
                           </span>
