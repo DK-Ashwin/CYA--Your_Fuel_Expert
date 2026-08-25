@@ -397,7 +397,7 @@ export default function App() {
       {/* Header */}
       <header className="app-header">
         <div className="logo-group">
-          <img src="/favicon.png" alt="CYA! Logo" style={{ height: '36px', borderRadius: '4px', filter: 'drop-shadow(0 0 8px var(--accent-cyan))' }} />
+          <img src={`${import.meta.env.BASE_URL}cya.png`} alt="CYA! Logo" style={{ height: '36px', borderRadius: '4px', filter: 'drop-shadow(0 0 8px var(--accent-cyan))' }} />
           <h1 className="logo-text">CYA!</h1>
           <span className="logo-badge">UPI Ready</span>
         </div>
