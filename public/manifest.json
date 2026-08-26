@@ -1,0 +1,22 @@
+{
+  "name": "CYA! Fuel Splitter & UPI Settler",
+  "short_name": "CYA!",
+  "description": "Calculate fuel expenses, divide the costs with travelers, select a collector, and generate UPI QR codes or mobile deep links for instant payments.",
+  "start_url": "/CYA--Your_Fuel_Expert/",
+  "display": "standalone",
+  "background_color": "#0d0d0d",
+  "theme_color": "#0d0d0d",
+  "icons": [
+    {
+      "src": "/CYA--Your_Fuel_Expert/cya.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/CYA--Your_Fuel_Expert/cya.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    }
+  ]
+}
