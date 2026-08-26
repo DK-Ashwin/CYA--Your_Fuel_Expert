@@ -469,7 +469,7 @@ export default function App() {
               </h2>
 
               <div className="form-group">
-                <label className="form-label" htmlFor="car-name">Car Model / Trip Name <span className="help-text">(Optional)</span></label>
+                <label className="form-label" htmlFor="car-name">Trip Name <span className="help-text">(Optional)</span></label>
                 <div className="input-container">
                   <Car size={16} className="input-icon" />
                   <input
