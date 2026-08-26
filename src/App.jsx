@@ -893,6 +893,42 @@ export default function App() {
                   upiProvider={upiProvider}
                 />
 
+                {/* Inline UPI change controls */}
+                {collectorName !== 'NILL' && (
+                  <div style={{ marginTop: '1rem', padding: '0.75rem', background: 'rgba(255,255,255,0.04)', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.08)' }}>
+                    <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Change UPI Details</p>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+                      <select
+                        className="dropdown-select"
+                        style={{ fontSize: '0.82rem', padding: '0.45rem 1.8rem 0.45rem 0.6rem', height: 'auto' }}
+                        value={upiProvider}
+                        onChange={(e) => {
+                          setUpiProvider(e.target.value);
+                          setUpiInput('');
+                        }}
+                      >
+                        <option value="phonepe">PhonePe</option>
+                        <option value="paytm">Paytm</option>
+                        <option value="bhim">BHIM / UPI</option>
+                        <option value="custom">Custom UPI ID</option>
+                      </select>
+                      <input
+                        type="text"
+                        className="form-input form-input-no-icon"
+                        style={{ fontSize: '0.82rem', padding: '0.45rem 0.6rem', height: 'auto' }}
+                        placeholder={upiProvider === 'custom' ? 'e.g. name@axisbank' : 'Mobile number'}
+                        value={upiInput}
+                        onChange={(e) => setUpiInput(e.target.value)}
+                      />
+                    </div>
+                    {upiId && (
+                      <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.4rem' }}>
+                        UPI ID: <span style={{ color: 'var(--accent-cyan)' }}>{upiId}</span>
+                      </p>
+                    )}
+                  </div>
+                )}
+
                 {upiString && (
                   <div className="mobile-only-btn">
                     <a 
