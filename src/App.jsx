@@ -161,20 +161,54 @@ export default function App() {
   // Standard UPI URI for QR code generation (Universal scanner support)
   const upiString = upiParams ? `upi://pay?${upiParams}` : '';
 
-  // Direct app-specific deep link for "Pay via UPI App" mobile button
-  const getAppDeepLink = () => {
-    if (!upiParams) return '';
-    switch (upiProvider) {
-      case 'gpay':
-        return `tez://upi/pay?${upiParams}`;
-      case 'phonepe':
-        return `phonepe://pay?${upiParams}`;
-      case 'paytm':
-        return `paytmmp://pay?${upiParams}`;
-      case 'bhim':
-        return `bhim://pay?${upiParams}`;
-      default:
-        return `upi://pay?${upiParams}`;
+  // Direct app-specific deep link handler for the mobile button
+  const handlePayViaUpi = (e) => {
+    if (e) e.preventDefault();
+    if (!upiParams) return;
+
+    const userAgent = navigator.userAgent || navigator.vendor || window.opera;
+    const isAndroid = /android/i.test(userAgent);
+    const isIOS = /iPad|iPhone|iPod/.test(userAgent) && !window.MSStream;
+    const isMobile = isAndroid || isIOS || /Mobile|Tablet|Silk/i.test(userAgent);
+
+    if (!isMobile) {
+      alert('UPI app redirection is designed for mobile devices with UPI apps installed.\n\nTo pay on desktop/PC, please scan the QR code above using Google Pay, PhonePe, Paytm, or any UPI app on your phone.');
+      return;
+    }
+
+    // Android package intent mappings (launches the specific app directly)
+    const androidPackages = {
+      gpay: 'com.google.android.apps.nbu.paisa.user',
+      phonepe: 'com.phonepe.app',
+      paytm: 'net.one97.paytm',
+      bhim: 'in.org.npci.upiapp',
+    };
+
+    // iOS custom URL schemes
+    const iosSchemes = {
+      gpay: `gpay://upi/pay?${upiParams}`,
+      phonepe: `phonepe://pay?${upiParams}`,
+      paytm: `paytmmp://pay?${upiParams}`,
+      bhim: `bhim://pay?${upiParams}`,
+    };
+
+    let targetUrl = '';
+
+    if (isAndroid && androidPackages[upiProvider]) {
+      // Android Intent URI format directly targets the app's package
+      targetUrl = `intent://pay?${upiParams}#Intent;scheme=upi;package=${androidPackages[upiProvider]};end`;
+    } else if (isIOS && iosSchemes[upiProvider]) {
+      targetUrl = iosSchemes[upiProvider];
+    } else {
+      // Universal standard UPI intent
+      targetUrl = `upi://pay?${upiParams}`;
+    }
+
+    try {
+      window.location.href = targetUrl;
+    } catch (err) {
+      console.warn('Error launching UPI app deep link:', err);
+      window.location.href = `upi://pay?${upiParams}`;
     }
   };
 
@@ -1006,14 +1040,15 @@ export default function App() {
 
                 {upiString && (
                   <div className="mobile-only-btn">
-                    <a 
-                      href={getAppDeepLink()}
+                    <button 
+                      type="button"
+                      onClick={handlePayViaUpi}
                       className="btn btn-primary"
-                      style={{ textDecoration: 'none' }}
+                      style={{ width: '100%', justifyContent: 'center' }}
                     >
                       Pay via {getProviderDisplayName()}
                       <ExternalLink size={14} />
-                    </a>
+                    </button>
                   </div>
                 )}
 
