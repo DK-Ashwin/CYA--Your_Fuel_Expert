@@ -129,6 +129,8 @@ export default function App() {
 
       if (upiProvider === 'phonepe') {
         setUpiId(`${base}@ybl`);
+      } else if (upiProvider === 'gpay') {
+        setUpiId(`${base}@okaxis`);
       } else if (upiProvider === 'paytm') {
         setUpiId(`${base}@paytm`);
       } else if (upiProvider === 'bhim') {
@@ -151,10 +153,45 @@ export default function App() {
   const isTripCompleted = totalTravelersCount > 0 && paidCount === totalTravelersCount;
   const isLocked = isTripCompleted && pin.length === 4 && !isUnlocked;
 
-  // Build UPI string
-  const upiString = upiId 
-    ? `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(collectorName)}&am=${costPerPerson.toFixed(2)}&cu=INR&tn=${encodeURIComponent('Fuel split for ' + (carName || 'Trip'))}`
+  // Build standard UPI parameter string
+  const upiParams = upiId 
+    ? `pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(collectorName)}&am=${costPerPerson.toFixed(2)}&cu=INR&tn=${encodeURIComponent('Fuel split for ' + (carName || 'Trip'))}`
     : '';
+
+  // Standard UPI URI for QR code generation (Universal scanner support)
+  const upiString = upiParams ? `upi://pay?${upiParams}` : '';
+
+  // Direct app-specific deep link for "Pay via UPI App" mobile button
+  const getAppDeepLink = () => {
+    if (!upiParams) return '';
+    switch (upiProvider) {
+      case 'gpay':
+        return `tez://upi/pay?${upiParams}`;
+      case 'phonepe':
+        return `phonepe://pay?${upiParams}`;
+      case 'paytm':
+        return `paytmmp://pay?${upiParams}`;
+      case 'bhim':
+        return `bhim://pay?${upiParams}`;
+      default:
+        return `upi://pay?${upiParams}`;
+    }
+  };
+
+  const getProviderDisplayName = () => {
+    switch (upiProvider) {
+      case 'gpay':
+        return 'Google Pay';
+      case 'phonepe':
+        return 'PhonePe';
+      case 'paytm':
+        return 'Paytm';
+      case 'bhim':
+        return 'BHIM';
+      default:
+        return 'UPI App';
+    }
+  };
 
   // Handle Traveler actions
   const handleAddTraveler = (e) => {
@@ -248,9 +285,19 @@ export default function App() {
   const handleCalculateAndSave = () => {
     if (travelers.length === 0) return;
 
-    if (collectorName !== 'NILL' && upiProvider !== 'nill' && !upiInput.trim()) {
-      alert(`Please enter a valid ${upiProvider === 'custom' ? 'UPI ID' : 'Mobile Number'}.`);
-      return;
+    if (collectorName !== 'NILL' && upiProvider !== 'nill') {
+      if (upiProvider === 'custom') {
+        if (!upiInput.trim()) {
+          alert('Please enter a valid UPI ID (e.g. name@axisbank).');
+          return;
+        }
+      } else {
+        const cleanPhone = upiInput.trim().replace(/\D/g, '');
+        if (cleanPhone.length !== 10) {
+          alert('Please enter a valid 10-digit Mobile Number.');
+          return;
+        }
+      }
     }
 
     if (collectorName !== 'NILL' && pin.length !== 4) {
@@ -356,9 +403,21 @@ export default function App() {
 
     // Try to parse out the raw UPI inputs for the form fields
     if (record.collectorUpiId) {
-      if (record.collectorUpiId.endsWith('@ybl')) {
+      if (
+        record.collectorUpiId.endsWith('@ybl') || 
+        record.collectorUpiId.endsWith('@ibl') || 
+        record.collectorUpiId.endsWith('@axl')
+      ) {
         setUpiProvider('phonepe');
-        setUpiInput(record.collectorUpiId.replace('@ybl', ''));
+        setUpiInput(record.collectorUpiId.split('@')[0]);
+      } else if (
+        record.collectorUpiId.endsWith('@okaxis') || 
+        record.collectorUpiId.endsWith('@okhdfcbank') || 
+        record.collectorUpiId.endsWith('@okicici') || 
+        record.collectorUpiId.endsWith('@oksbi')
+      ) {
+        setUpiProvider('gpay');
+        setUpiInput(record.collectorUpiId.split('@')[0]);
       } else if (record.collectorUpiId.endsWith('@paytm')) {
         setUpiProvider('paytm');
         setUpiInput(record.collectorUpiId.replace('@paytm', ''));
@@ -674,6 +733,7 @@ export default function App() {
                           }}
                         >
                           <option value="phonepe">PhonePe</option>
+                          <option value="gpay">Google Pay</option>
                           <option value="paytm">Paytm</option>
                           <option value="bhim">BHIM / UPI</option>
                           <option value="custom">Custom UPI ID</option>
@@ -686,7 +746,9 @@ export default function App() {
                         </label>
                         <input
                           id="upi-input"
-                          type="text"
+                          type={upiProvider === 'custom' ? 'text' : 'tel'}
+                          inputMode={upiProvider === 'custom' ? 'text' : 'numeric'}
+                          maxLength={upiProvider === 'custom' ? undefined : 10}
                           className="form-input form-input-no-icon"
                           placeholder={
                             upiProvider === 'custom' 
@@ -694,7 +756,12 @@ export default function App() {
                               : 'e.g. 9876543210'
                           }
                           value={upiInput}
-                          onChange={(e) => setUpiInput(e.target.value)}
+                          onChange={(e) => {
+                            const val = upiProvider === 'custom' 
+                              ? e.target.value 
+                              : e.target.value.replace(/\D/g, '').slice(0, 10);
+                            setUpiInput(val);
+                          }}
                         />
                       </div>
                     </div>
@@ -908,17 +975,25 @@ export default function App() {
                         }}
                       >
                         <option value="phonepe">PhonePe</option>
+                        <option value="gpay">Google Pay</option>
                         <option value="paytm">Paytm</option>
                         <option value="bhim">BHIM / UPI</option>
                         <option value="custom">Custom UPI ID</option>
                       </select>
                       <input
-                        type="text"
+                        type={upiProvider === 'custom' ? 'text' : 'tel'}
+                        inputMode={upiProvider === 'custom' ? 'text' : 'numeric'}
+                        maxLength={upiProvider === 'custom' ? undefined : 10}
                         className="form-input form-input-no-icon"
                         style={{ fontSize: '0.82rem', padding: '0.45rem 0.6rem', height: 'auto' }}
-                        placeholder={upiProvider === 'custom' ? 'e.g. name@axisbank' : 'Mobile number'}
+                        placeholder={upiProvider === 'custom' ? 'e.g. name@axisbank' : 'e.g. 9876543210'}
                         value={upiInput}
-                        onChange={(e) => setUpiInput(e.target.value)}
+                        onChange={(e) => {
+                          const val = upiProvider === 'custom' 
+                            ? e.target.value 
+                            : e.target.value.replace(/\D/g, '').slice(0, 10);
+                          setUpiInput(val);
+                        }}
                       />
                     </div>
                     {upiId && (
@@ -932,11 +1007,11 @@ export default function App() {
                 {upiString && (
                   <div className="mobile-only-btn">
                     <a 
-                      href={upiString}
+                      href={getAppDeepLink()}
                       className="btn btn-primary"
                       style={{ textDecoration: 'none' }}
                     >
-                      Pay via UPI App
+                      Pay via {getProviderDisplayName()}
                       <ExternalLink size={14} />
                     </a>
                   </div>
