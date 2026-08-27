@@ -439,6 +439,46 @@ body {
   gap: 0.75rem;
 }
 
+@media (max-width: 640px) {
+  .upi-setup-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.handle-pill-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+}
+
+.handle-pill {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-weight: 500;
+  padding: 0.25rem 0.6rem;
+  border-radius: 9999px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  font-family: var(--font-sans);
+}
+
+.handle-pill:hover {
+  background: rgba(6, 182, 212, 0.1);
+  border-color: rgba(6, 182, 212, 0.3);
+  color: var(--accent-cyan);
+}
+
+.handle-pill.active {
+  background: var(--accent-cyan);
+  border-color: var(--accent-cyan);
+  color: #050505;
+  font-weight: 700;
+  box-shadow: 0 0 10px var(--accent-cyan-glow);
+}
+
 .qr-section {
   display: flex;
   flex-direction: column;

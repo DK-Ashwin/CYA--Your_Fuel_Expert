@@ -7,7 +7,6 @@ import {
   Trash2, 
   Info, 
   ExternalLink, 
-  Save, 
   Car, 
   TrendingUp, 
   Navigation,
@@ -22,6 +21,36 @@ import {
 import QRCodeDisplay from './components/QRCodeDisplay';
 import HistoryLog from './components/HistoryLog';
 
+// Comprehensive UPI handle definitions across Indian UPI ecosystem
+const UPI_HANDLES = {
+  gpay: [
+    { label: '@oksbi (SBI)', value: '@oksbi' },
+    { label: '@okaxis (Axis)', value: '@okaxis' },
+    { label: '@okhdfcbank (HDFC)', value: '@okhdfcbank' },
+    { label: '@okicici (ICICI)', value: '@okicici' },
+    { label: 'UPI Number Only', value: '' },
+  ],
+  phonepe: [
+    { label: '@ybl', value: '@ybl' },
+    { label: '@ibl', value: '@ibl' },
+    { label: '@axl', value: '@axl' },
+  ],
+  paytm: [
+    { label: '@paytm', value: '@paytm' },
+    { label: '@ptsbi', value: '@ptsbi' },
+    { label: '@pthdfc', value: '@pthdfc' },
+    { label: '@ptaxis', value: '@ptaxis' },
+  ],
+  bhim: [
+    { label: '@upi', value: '@upi' },
+    { label: '@sbi', value: '@sbi' },
+    { label: '@icici', value: '@icici' },
+    { label: '@hdfcbank', value: '@hdfcbank' },
+    { label: '@kotak', value: '@kotak' },
+    { label: '@axisbank', value: '@axisbank' },
+  ],
+};
+
 export default function App() {
   // Input fields state
   const [carName, setCarName] = useState('');
@@ -33,7 +62,10 @@ export default function App() {
   
   // Payment state
   const [collectorName, setCollectorName] = useState('You');
-  const [upiProvider, setUpiProvider] = useState('phonepe');
+  const [upiProvider, setUpiProvider] = useState('gpay');
+  const [upiHandle, setUpiHandle] = useState('@oksbi');
+  const [isOtherHandle, setIsOtherHandle] = useState(false);
+  const [customSuffix, setCustomSuffix] = useState('@');
   const [upiInput, setUpiInput] = useState(''); // Mobile number or custom UPI ID
   const [upiId, setUpiId] = useState('');
   const [pin, setPin] = useState('');
@@ -51,7 +83,6 @@ export default function App() {
   
   // App system state
   const [history, setHistory] = useState([]);
-  const [saveSuccess, setSaveSuccess] = useState(false);
   
   // View and process wizard state
   const [activeTab, setActiveTab] = useState('calculator'); // 'calculator' | 'history'
@@ -106,7 +137,7 @@ export default function App() {
     return () => clearInterval(timer);
   }, [lockoutTimeLeft]);
 
-  // Update UPI ID dynamically based on selected provider and input
+  // Update UPI ID dynamically based on selected provider, handle, and input
   useEffect(() => {
     if (upiProvider === 'nill' || collectorName === 'NILL') {
       setUpiId('');
@@ -122,22 +153,23 @@ export default function App() {
     if (upiProvider === 'custom') {
       setUpiId(trimmed);
     } else {
-      // Auto-generate standard format if input is a phone number or string
       // Clean phone number (keep digits)
       const cleanPhone = trimmed.replace(/\D/g, '');
       const base = cleanPhone.length === 10 ? cleanPhone : trimmed;
-
-      if (upiProvider === 'phonepe') {
-        setUpiId(`${base}@ybl`);
-      } else if (upiProvider === 'gpay') {
-        setUpiId(`${base}@okaxis`);
-      } else if (upiProvider === 'paytm') {
-        setUpiId(`${base}@paytm`);
-      } else if (upiProvider === 'bhim') {
-        setUpiId(`${base}@upi`);
+      
+      let handle = '';
+      if (isOtherHandle) {
+        const cleanCustom = customSuffix.trim();
+        if (cleanCustom && cleanCustom !== '@') {
+          handle = cleanCustom.startsWith('@') ? cleanCustom : `@${cleanCustom}`;
+        }
+      } else {
+        handle = upiHandle !== undefined ? upiHandle : '';
       }
+
+      setUpiId(handle ? `${base}${handle}` : base);
     }
-  }, [upiProvider, upiInput, collectorName]);
+  }, [upiProvider, upiHandle, isOtherHandle, customSuffix, upiInput, collectorName]);
 
   // Handle calculations
   const parsedMileage = parseFloat(mileage) || 0;
@@ -153,9 +185,9 @@ export default function App() {
   const isTripCompleted = totalTravelersCount > 0 && paidCount === totalTravelersCount;
   const isLocked = isTripCompleted && pin.length === 4 && !isUnlocked;
 
-  // Build standard UPI parameter string
+  // Build standard UPI parameter string (keep literal @ in pa as required by NPCI QR scanner specifications)
   const upiParams = upiId 
-    ? `pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(collectorName)}&am=${costPerPerson.toFixed(2)}&cu=INR&tn=${encodeURIComponent('Fuel split for ' + (carName || 'Trip'))}`
+    ? `pa=${upiId.trim()}&pn=${encodeURIComponent(collectorName || 'Collector')}&am=${costPerPerson.toFixed(2)}&cu=INR&tn=${encodeURIComponent('Fuel split for ' + (carName || 'Trip'))}`
     : '';
 
   // Standard UPI URI for QR code generation (Universal scanner support)
@@ -164,7 +196,21 @@ export default function App() {
   // Direct app-specific deep link handler for the mobile button
   const handlePayViaUpi = (e) => {
     if (e) e.preventDefault();
-    if (!upiParams) return;
+
+    const cleanPhone = upiInput.trim().replace(/\D/g, '');
+    const isPhoneNumber = cleanPhone.length === 10;
+    
+    // For Google Pay or direct app launching, target the phone number directly or the configured UPI ID
+    const targetAddress = (upiProvider === 'gpay' && isPhoneNumber)
+      ? cleanPhone
+      : (upiId || (isPhoneNumber ? cleanPhone : upiInput.trim()));
+
+    if (!targetAddress) {
+      alert('Please enter a valid mobile number or UPI ID first.');
+      return;
+    }
+
+    const payParams = `pa=${encodeURIComponent(targetAddress)}&pn=${encodeURIComponent(collectorName || 'Collector')}&am=${costPerPerson.toFixed(2)}&cu=INR&tn=${encodeURIComponent('Fuel split for ' + (carName || 'Trip'))}`;
 
     const userAgent = navigator.userAgent || navigator.vendor || window.opera;
     const isAndroid = /android/i.test(userAgent);
@@ -172,7 +218,7 @@ export default function App() {
     const isMobile = isAndroid || isIOS || /Mobile|Tablet|Silk/i.test(userAgent);
 
     if (!isMobile) {
-      alert('UPI app redirection is designed for mobile devices with UPI apps installed.\n\nTo pay on desktop/PC, please scan the QR code above using Google Pay, PhonePe, Paytm, or any UPI app on your phone.');
+      alert('Google Pay / UPI redirection is designed for mobile devices with the app installed.\n\nTo pay on desktop/PC, please scan the QR code above using Google Pay, PhonePe, Paytm, or any UPI app on your phone.');
       return;
     }
 
@@ -186,29 +232,29 @@ export default function App() {
 
     // iOS custom URL schemes
     const iosSchemes = {
-      gpay: `gpay://upi/pay?${upiParams}`,
-      phonepe: `phonepe://pay?${upiParams}`,
-      paytm: `paytmmp://pay?${upiParams}`,
-      bhim: `bhim://pay?${upiParams}`,
+      gpay: `gpay://upi/pay?${payParams}`,
+      phonepe: `phonepe://pay?${payParams}`,
+      paytm: `paytmmp://pay?${payParams}`,
+      bhim: `bhim://pay?${payParams}`,
     };
 
     let targetUrl = '';
 
     if (isAndroid && androidPackages[upiProvider]) {
       // Android Intent URI format directly targets the app's package
-      targetUrl = `intent://pay?${upiParams}#Intent;scheme=upi;package=${androidPackages[upiProvider]};end`;
+      targetUrl = `intent://pay?${payParams}#Intent;scheme=upi;package=${androidPackages[upiProvider]};end`;
     } else if (isIOS && iosSchemes[upiProvider]) {
       targetUrl = iosSchemes[upiProvider];
     } else {
       // Universal standard UPI intent
-      targetUrl = `upi://pay?${upiParams}`;
+      targetUrl = `upi://pay?${payParams}`;
     }
 
     try {
       window.location.href = targetUrl;
     } catch (err) {
       console.warn('Error launching UPI app deep link:', err);
-      window.location.href = `upi://pay?${upiParams}`;
+      window.location.href = `upi://pay?${payParams}`;
     }
   };
 
@@ -221,7 +267,7 @@ export default function App() {
       case 'paytm':
         return 'Paytm';
       case 'bhim':
-        return 'BHIM';
+        return 'BHIM / Bank UPI';
       default:
         return 'UPI App';
     }
@@ -331,6 +377,13 @@ export default function App() {
           alert('Please enter a valid 10-digit Mobile Number.');
           return;
         }
+        if (isOtherHandle) {
+          const cleanCustom = customSuffix.replace(/[@\s]/g, '');
+          if (!cleanCustom) {
+            alert('Please enter your custom handle suffix (e.g. @jupiter).');
+            return;
+          }
+        }
       }
     }
 
@@ -405,7 +458,10 @@ export default function App() {
     setFuelPrice('100');
     setTravelers(['You', 'Friend 1', 'Friend 2']);
     setCollectorName('You');
-    setUpiProvider('phonepe');
+    setUpiProvider('gpay');
+    setUpiHandle('');
+    setIsOtherHandle(false);
+    setCustomSuffix('@');
     setUpiInput('');
     setUpiId('');
     setPaidTravelers({});
@@ -437,34 +493,54 @@ export default function App() {
 
     // Try to parse out the raw UPI inputs for the form fields
     if (record.collectorUpiId) {
-      if (
-        record.collectorUpiId.endsWith('@ybl') || 
-        record.collectorUpiId.endsWith('@ibl') || 
-        record.collectorUpiId.endsWith('@axl')
-      ) {
-        setUpiProvider('phonepe');
-        setUpiInput(record.collectorUpiId.split('@')[0]);
-      } else if (
-        record.collectorUpiId.endsWith('@okaxis') || 
-        record.collectorUpiId.endsWith('@okhdfcbank') || 
-        record.collectorUpiId.endsWith('@okicici') || 
-        record.collectorUpiId.endsWith('@oksbi')
-      ) {
-        setUpiProvider('gpay');
-        setUpiInput(record.collectorUpiId.split('@')[0]);
-      } else if (record.collectorUpiId.endsWith('@paytm')) {
-        setUpiProvider('paytm');
-        setUpiInput(record.collectorUpiId.replace('@paytm', ''));
-      } else if (record.collectorUpiId.endsWith('@upi')) {
-        setUpiProvider('bhim');
-        setUpiInput(record.collectorUpiId.replace('@upi', ''));
+      const upi = record.collectorUpiId.trim();
+      const atIndex = upi.lastIndexOf('@');
+      if (atIndex !== -1) {
+        const prefix = upi.substring(0, atIndex);
+        const suffix = upi.substring(atIndex);
+
+        if (UPI_HANDLES.phonepe?.some(h => h.value === suffix)) {
+          setUpiProvider('phonepe');
+          setUpiHandle(suffix);
+          setIsOtherHandle(false);
+          setUpiInput(prefix);
+        } else if (UPI_HANDLES.paytm?.some(h => h.value === suffix)) {
+          setUpiProvider('paytm');
+          setUpiHandle(suffix);
+          setIsOtherHandle(false);
+          setUpiInput(prefix);
+        } else if (UPI_HANDLES.bhim?.some(h => h.value === suffix)) {
+          setUpiProvider('bhim');
+          setUpiHandle(suffix);
+          setIsOtherHandle(false);
+          setUpiInput(prefix);
+        } else {
+          setUpiProvider('custom');
+          setIsOtherHandle(false);
+          setUpiHandle('');
+          setUpiInput(upi);
+        }
       } else {
-        setUpiProvider('custom');
-        setUpiInput(record.collectorUpiId);
+        // Plain 10-digit number without @ -> Google Pay UPI Number
+        const cleanPhone = upi.replace(/\D/g, '');
+        if (cleanPhone.length === 10) {
+          setUpiProvider('gpay');
+          setUpiHandle('');
+          setIsOtherHandle(false);
+          setUpiInput(cleanPhone);
+        } else {
+          setUpiProvider('custom');
+          setIsOtherHandle(false);
+          setUpiHandle('');
+          setUpiInput(upi);
+        }
       }
     } else {
       setUpiInput('');
-      setUpiProvider('phonepe');
+      setUpiProvider('gpay');
+      setUpiHandle('');
+      setIsOtherHandle(false);
+      setCustomSuffix('@');
     }
 
     // Switch view to calculator and jump directly to Step 4 (UPI UI)
@@ -754,29 +830,33 @@ export default function App() {
 
                 {travelers.length > 0 && collectorName !== 'NILL' && (
                   <>
-                    <div className="upi-setup-row" style={{ gridTemplateColumns: '1fr 1fr' }}>
+                    <div className="upi-setup-row">
                       <div className="form-group" style={{ marginBottom: 0 }}>
-                        <label className="form-label" htmlFor="provider-select">UPI App / ID</label>
+                        <label className="form-label" htmlFor="provider-select">UPI App</label>
                         <select
                           id="provider-select"
                           className="dropdown-select"
                           value={upiProvider}
                           onChange={(e) => {
-                            setUpiProvider(e.target.value);
-                            setUpiInput('');
+                            const newProvider = e.target.value;
+                            setUpiProvider(newProvider);
+                            setIsOtherHandle(false);
+                            if (UPI_HANDLES[newProvider]) {
+                              setUpiHandle(UPI_HANDLES[newProvider][0].value);
+                            }
                           }}
                         >
+                          <option value="gpay">Google Pay (GPay)</option>
                           <option value="phonepe">PhonePe</option>
-                          <option value="gpay">Google Pay</option>
                           <option value="paytm">Paytm</option>
-                          <option value="bhim">BHIM / UPI</option>
+                          <option value="bhim">BHIM / Bank UPI</option>
                           <option value="custom">Custom UPI ID</option>
                         </select>
                       </div>
 
                       <div className="form-group" style={{ marginBottom: 0 }}>
                         <label className="form-label" htmlFor="upi-input">
-                          {upiProvider === 'custom' ? 'Enter UPI ID' : 'Mobile Number'}
+                          {upiProvider === 'custom' ? 'Enter UPI ID' : (upiProvider === 'gpay' ? 'Google Pay UPI / Phone Number' : 'Mobile Number')}
                         </label>
                         <input
                           id="upi-input"
@@ -800,9 +880,70 @@ export default function App() {
                       </div>
                     </div>
 
+                    {/* Quick 1-click handle selectors with Other (for PhonePe, Paytm, BHIM) */}
+                    {UPI_HANDLES[upiProvider] && (
+                      <div style={{ marginTop: '0.75rem' }}>
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.35rem' }}>
+                          Select Handle ({upiProvider === 'phonepe' ? 'PhonePe' : upiProvider === 'paytm' ? 'Paytm' : 'Bank UPI'}):
+                        </span>
+                        <div className="handle-pill-group">
+                          {UPI_HANDLES[upiProvider].map((h) => (
+                            <button
+                              key={h.value || 'just-number'}
+                              type="button"
+                              className={`handle-pill ${!isOtherHandle && upiHandle === h.value ? 'active' : ''}`}
+                              onClick={() => {
+                                setIsOtherHandle(false);
+                                setUpiHandle(h.value);
+                              }}
+                            >
+                              {h.label}
+                            </button>
+                          ))}
+                          <button
+                            type="button"
+                            className={`handle-pill ${isOtherHandle ? 'active' : ''}`}
+                            onClick={() => {
+                              setIsOtherHandle(true);
+                            }}
+                          >
+                            Other
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Custom Suffix input when "Other" is selected */}
+                    {upiProvider !== 'custom' && isOtherHandle && (
+                      <div className="form-group" style={{ marginTop: '0.75rem', marginBottom: 0, animation: 'slideIn var(--transition-fast)' }}>
+                        <label className="form-label" htmlFor="custom-suffix-input" style={{ fontSize: '0.78rem' }}>
+                          Enter Custom Handle Suffix
+                        </label>
+                        <div className="input-container">
+                          <span className="input-icon" style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--accent-cyan)' }}>@</span>
+                          <input
+                            id="custom-suffix-input"
+                            type="text"
+                            className="form-input"
+                            placeholder="e.g. jupiter, federal, or ybl"
+                            value={customSuffix.startsWith('@') ? customSuffix.slice(1) : customSuffix}
+                            onChange={(e) => {
+                              const clean = e.target.value.replace(/[@\s]/g, '').toLowerCase();
+                              setCustomSuffix(clean ? `@${clean}` : '@');
+                            }}
+                          />
+                        </div>
+                      </div>
+                    )}
+
                     {upiId && (
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '-0.5rem' }}>
-                        Generated UPI Target: <span className="accent-text">{upiId}</span>
+                      <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.6rem', background: 'rgba(6, 182, 212, 0.06)', padding: '0.45rem 0.75rem', borderRadius: '6px', border: '1px solid rgba(6, 182, 212, 0.15)' }}>
+                        <div>Generated UPI Target: <span className="accent-text" style={{ fontWeight: 700 }}>{upiId}</span></div>
+                        {upiProvider === 'gpay' && (
+                          <div style={{ fontSize: '0.72rem', color: 'var(--accent-teal)', marginTop: '0.25rem' }}>
+                            ✓ Using Google Pay UPI Number ({upiId}) directly for payments.
+                          </div>
+                        )}
                       </div>
                     )}
 
@@ -1004,14 +1145,18 @@ export default function App() {
                         style={{ fontSize: '0.82rem', padding: '0.45rem 1.8rem 0.45rem 0.6rem', height: 'auto' }}
                         value={upiProvider}
                         onChange={(e) => {
-                          setUpiProvider(e.target.value);
-                          setUpiInput('');
+                          const newProvider = e.target.value;
+                          setUpiProvider(newProvider);
+                          setIsOtherHandle(false);
+                          if (UPI_HANDLES[newProvider]) {
+                            setUpiHandle(UPI_HANDLES[newProvider][0].value);
+                          }
                         }}
                       >
-                        <option value="phonepe">PhonePe</option>
                         <option value="gpay">Google Pay</option>
+                        <option value="phonepe">PhonePe</option>
                         <option value="paytm">Paytm</option>
-                        <option value="bhim">BHIM / UPI</option>
+                        <option value="bhim">BHIM / Bank</option>
                         <option value="custom">Custom UPI ID</option>
                       </select>
                       <input
@@ -1030,9 +1175,55 @@ export default function App() {
                         }}
                       />
                     </div>
+                    {/* Quick handle pills with Other */}
+                    {UPI_HANDLES[upiProvider] && (
+                      <div className="handle-pill-group" style={{ marginTop: '0.45rem' }}>
+                        {UPI_HANDLES[upiProvider].map((h) => (
+                          <button
+                            key={h.value || 'just-number'}
+                            type="button"
+                            className={`handle-pill ${!isOtherHandle && upiHandle === h.value ? 'active' : ''}`}
+                            onClick={() => {
+                              setIsOtherHandle(false);
+                              setUpiHandle(h.value);
+                            }}
+                          >
+                            {h.label}
+                          </button>
+                        ))}
+                        <button
+                          type="button"
+                          className={`handle-pill ${isOtherHandle ? 'active' : ''}`}
+                          onClick={() => {
+                            setIsOtherHandle(true);
+                          }}
+                        >
+                          Other
+                        </button>
+                      </div>
+                    )}
+                    {/* Custom Suffix input if Other selected */}
+                    {upiProvider !== 'custom' && isOtherHandle && (
+                      <div style={{ marginTop: '0.45rem', animation: 'slideIn var(--transition-fast)' }}>
+                        <div className="input-container">
+                          <span className="input-icon" style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--accent-cyan)' }}>@</span>
+                          <input
+                            type="text"
+                            className="form-input"
+                            style={{ fontSize: '0.82rem', padding: '0.4rem 0.6rem 0.4rem 2rem', height: 'auto' }}
+                            placeholder="suffix (e.g. jupiter, federal)"
+                            value={customSuffix.startsWith('@') ? customSuffix.slice(1) : customSuffix}
+                            onChange={(e) => {
+                              const clean = e.target.value.replace(/[@\s]/g, '').toLowerCase();
+                              setCustomSuffix(clean ? `@${clean}` : '@');
+                            }}
+                          />
+                        </div>
+                      </div>
+                    )}
                     {upiId && (
-                      <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.4rem' }}>
-                        UPI ID: <span style={{ color: 'var(--accent-cyan)' }}>{upiId}</span>
+                      <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.45rem' }}>
+                        UPI ID: <span style={{ color: 'var(--accent-cyan)', fontWeight: 600 }}>{upiId}</span>
                       </p>
                     )}
                   </div>

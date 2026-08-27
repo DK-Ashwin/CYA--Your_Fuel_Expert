@@ -1,5 +1,5 @@
 import React from 'react';
-import { RotateCcw, Trash2, History, Car, Users, Calendar, Banknote, Check, Lock, Unlock } from 'lucide-react';
+import { RotateCcw, Trash2, History, Car, Users, Calendar, Check, Lock, Unlock } from 'lucide-react';
 
 export default function HistoryLog({ history, onReload, onDelete, onClearAll, onUpdatePaymentStatus }) {
   const [unlockedItems, setUnlockedItems] = React.useState({});
@@ -46,7 +46,7 @@ export default function HistoryLog({ history, onReload, onDelete, onClearAll, on
         hour: '2-digit',
         minute: '2-digit',
       });
-    } catch (e) {
+    } catch {
       return dateStr;
     }
   };
