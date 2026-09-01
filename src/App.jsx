@@ -16,7 +16,9 @@ import {
   ChevronRight,
   History,
   Lock,
-  Unlock
+  Unlock,
+  Share2,
+  Contact
 } from 'lucide-react';
 import QRCodeDisplay from './components/QRCodeDisplay';
 import HistoryLog from './components/HistoryLog';
@@ -28,7 +30,7 @@ const UPI_HANDLES = {
     { label: '@okaxis (Axis)', value: '@okaxis' },
     { label: '@okhdfcbank (HDFC)', value: '@okhdfcbank' },
     { label: '@okicici (ICICI)', value: '@okicici' },
-    { label: 'UPI Number Only', value: '' },
+    { label: '@gpay (GPay)', value: '@gpay' },
   ],
   phonepe: [
     { label: '@ybl', value: '@ybl' },
@@ -185,32 +187,33 @@ export default function App() {
   const isTripCompleted = totalTravelersCount > 0 && paidCount === totalTravelersCount;
   const isLocked = isTripCompleted && pin.length === 4 && !isUnlocked;
 
-  // Build standard UPI parameter string (keep literal @ in pa as required by NPCI QR scanner specifications)
+  // Build standard UPI parameter string with unique transaction reference (tr=) required by UPI apps
   const upiParams = upiId 
-    ? `pa=${upiId.trim()}&pn=${encodeURIComponent(collectorName || 'Collector')}&am=${costPerPerson.toFixed(2)}&cu=INR&tn=${encodeURIComponent('Fuel split for ' + (carName || 'Trip'))}`
+    ? `pa=${upiId.trim()}&pn=${encodeURIComponent(collectorName || 'Collector')}&tr=CYA${Date.now()}&am=${costPerPerson.toFixed(2)}&cu=INR&tn=${encodeURIComponent('Fuel split for ' + (carName || 'Trip'))}`
     : '';
 
   // Standard UPI URI for QR code generation (Universal scanner support)
   const upiString = upiParams ? `upi://pay?${upiParams}` : '';
 
   // Direct app-specific deep link handler for the mobile button
-  const handlePayViaUpi = (e) => {
+  const handlePayViaUpi = (e, forceUniversal = false) => {
     if (e) e.preventDefault();
 
     const cleanPhone = upiInput.trim().replace(/\D/g, '');
     const isPhoneNumber = cleanPhone.length === 10;
     
-    // For Google Pay or direct app launching, target the phone number directly or the configured UPI ID
-    const targetAddress = (upiProvider === 'gpay' && isPhoneNumber)
-      ? cleanPhone
-      : (upiId || (isPhoneNumber ? cleanPhone : upiInput.trim()));
+    // Always target a complete, valid UPI VPA (e.g. 9876543210@oksbi)
+    const payeeVpa = upiId 
+      ? upiId.trim() 
+      : (isPhoneNumber ? `${cleanPhone}${upiHandle || '@oksbi'}` : upiInput.trim());
 
-    if (!targetAddress) {
+    if (!payeeVpa) {
       alert('Please enter a valid mobile number or UPI ID first.');
       return;
     }
 
-    const payParams = `pa=${encodeURIComponent(targetAddress)}&pn=${encodeURIComponent(collectorName || 'Collector')}&am=${costPerPerson.toFixed(2)}&cu=INR&tn=${encodeURIComponent('Fuel split for ' + (carName || 'Trip'))}`;
+    const txnRef = `CYA${Date.now()}`;
+    const payParams = `pa=${payeeVpa}&pn=${encodeURIComponent(collectorName || 'Collector')}&tr=${txnRef}&am=${costPerPerson.toFixed(2)}&cu=INR&tn=${encodeURIComponent('Fuel split for ' + (carName || 'Trip'))}`;
 
     const userAgent = navigator.userAgent || navigator.vendor || window.opera;
     const isAndroid = /android/i.test(userAgent);
@@ -240,13 +243,13 @@ export default function App() {
 
     let targetUrl = '';
 
-    if (isAndroid && androidPackages[upiProvider]) {
-      // Android Intent URI format directly targets the app's package
-      targetUrl = `intent://pay?${payParams}#Intent;scheme=upi;package=${androidPackages[upiProvider]};end`;
-    } else if (isIOS && iosSchemes[upiProvider]) {
+    if (!forceUniversal && isAndroid && androidPackages[upiProvider]) {
+      // Android Intent URI format directly targets the app's package with upi/pay authority
+      targetUrl = `intent://upi/pay?${payParams}#Intent;scheme=upi;package=${androidPackages[upiProvider]};end`;
+    } else if (!forceUniversal && isIOS && iosSchemes[upiProvider]) {
       targetUrl = iosSchemes[upiProvider];
     } else {
-      // Universal standard UPI intent
+      // Universal standard UPI intent (opens system app chooser)
       targetUrl = `upi://pay?${payParams}`;
     }
 
@@ -271,6 +274,46 @@ export default function App() {
       default:
         return 'UPI App';
     }
+  };
+
+  // Web Contacts API Picker integration
+  const handleImportContact = async () => {
+    if ('contacts' in navigator && 'ContactsManager' in window) {
+      try {
+        const contacts = await navigator.contacts.select(['name', 'tel'], { multiple: false });
+        if (contacts && contacts.length > 0) {
+          const selected = contacts[0];
+          const name = (selected.name && selected.name[0]) ? selected.name[0].trim() : '';
+          const rawTel = (selected.tel && selected.tel[0]) ? selected.tel[0].replace(/\D/g, '') : '';
+          const phone = rawTel.slice(-10);
+
+          if (name && !travelers.includes(name)) {
+            setTravelers(prev => [...prev, name]);
+          }
+          if (phone && phone.length === 10) {
+            setUpiInput(phone);
+          }
+          if (name || phone) {
+            alert(`Selected contact: ${name || 'Contact'} ${phone ? `(${phone})` : ''}`);
+          }
+        }
+      } catch (err) {
+        console.warn('Contact picker cancelled or error:', err);
+      }
+    } else {
+      alert('Web Contact Picker is available on mobile browsers like Chrome for Android over HTTPS.\n\nPlease enter the name/number manually on this browser.');
+    }
+  };
+
+  // WhatsApp Share helper
+  const handleShareToWhatsApp = () => {
+    const text = `Hey! Here is the fuel split details for *${carName || 'our trip'}*:\n\n` +
+      `💰 *Cost per person:* ₹${costPerPerson.toFixed(2)}\n` +
+      `👤 *Payee Collector:* ${collectorName}\n` +
+      (upiId ? `💳 *UPI ID:* ${upiId}\n\n` : '\n') +
+      `Please transfer your share via Google Pay / PhonePe / Paytm. Thank you!`;
+    const waUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
+    window.open(waUrl, '_blank');
   };
 
   // Handle Traveler actions
@@ -366,12 +409,12 @@ export default function App() {
     if (travelers.length === 0) return;
 
     if (collectorName !== 'NILL' && upiProvider !== 'nill') {
-      if (upiProvider === 'custom') {
-        if (!upiInput.trim()) {
-          alert('Please enter a valid UPI ID (e.g. name@axisbank).');
-          return;
-        }
-      } else {
+      const upiRegex = /^[\w.-]+@[\w.-]+$/;
+      if (!upiId || !upiRegex.test(upiId.trim())) {
+        alert('Please enter or select a valid UPI ID (e.g., 9876543210@oksbi or name@bank).');
+        return;
+      }
+      if (upiProvider !== 'custom') {
         const cleanPhone = upiInput.trim().replace(/\D/g, '');
         if (cleanPhone.length !== 10) {
           alert('Please enter a valid 10-digit Mobile Number.');
@@ -459,7 +502,7 @@ export default function App() {
     setTravelers(['You', 'Friend 1', 'Friend 2']);
     setCollectorName('You');
     setUpiProvider('gpay');
-    setUpiHandle('');
+    setUpiHandle('@oksbi');
     setIsOtherHandle(false);
     setCustomSuffix('@');
     setUpiInput('');
@@ -499,7 +542,12 @@ export default function App() {
         const prefix = upi.substring(0, atIndex);
         const suffix = upi.substring(atIndex);
 
-        if (UPI_HANDLES.phonepe?.some(h => h.value === suffix)) {
+        if (UPI_HANDLES.gpay?.some(h => h.value === suffix)) {
+          setUpiProvider('gpay');
+          setUpiHandle(suffix);
+          setIsOtherHandle(false);
+          setUpiInput(prefix);
+        } else if (UPI_HANDLES.phonepe?.some(h => h.value === suffix)) {
           setUpiProvider('phonepe');
           setUpiHandle(suffix);
           setIsOtherHandle(false);
@@ -521,11 +569,11 @@ export default function App() {
           setUpiInput(upi);
         }
       } else {
-        // Plain 10-digit number without @ -> Google Pay UPI Number
+        // Plain 10-digit number without @ -> Google Pay default SBI handle
         const cleanPhone = upi.replace(/\D/g, '');
         if (cleanPhone.length === 10) {
           setUpiProvider('gpay');
-          setUpiHandle('');
+          setUpiHandle('@oksbi');
           setIsOtherHandle(false);
           setUpiInput(cleanPhone);
         } else {
@@ -538,7 +586,7 @@ export default function App() {
     } else {
       setUpiInput('');
       setUpiProvider('gpay');
-      setUpiHandle('');
+      setUpiHandle('@oksbi');
       setIsOtherHandle(false);
       setCustomSuffix('@');
     }
@@ -759,18 +807,31 @@ export default function App() {
                 </div>
               )}
 
-              <form onSubmit={handleAddTraveler} style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}>
-                <input
-                  type="text"
-                  className="form-input form-input-no-icon"
-                  placeholder="Add passenger name..."
-                  value={newTravelerName}
-                  onChange={(e) => setNewTravelerName(e.target.value)}
-                />
-                <button type="submit" className="btn btn-secondary btn-action-sm" style={{ width: 'auto', padding: '0.75rem 1rem' }}>
-                  <Plus size={18} />
+              <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem', alignItems: 'center' }}>
+                <form onSubmit={handleAddTraveler} style={{ display: 'flex', gap: '0.5rem', flex: 1 }}>
+                  <input
+                    type="text"
+                    className="form-input form-input-no-icon"
+                    placeholder="Add passenger name..."
+                    value={newTravelerName}
+                    onChange={(e) => setNewTravelerName(e.target.value)}
+                  />
+                  <button type="submit" className="btn btn-secondary btn-action-sm" style={{ width: 'auto', padding: '0.75rem 1rem' }} title="Add traveler">
+                    <Plus size={18} />
+                  </button>
+                </form>
+
+                <button 
+                  type="button" 
+                  onClick={handleImportContact} 
+                  className="btn btn-secondary btn-action-sm" 
+                  style={{ width: 'auto', padding: '0.75rem 1rem', whiteSpace: 'nowrap', display: 'flex', gap: '0.4rem', alignItems: 'center' }}
+                  title="Pick contact from Phone Contacts"
+                >
+                  <Contact size={18} style={{ color: 'var(--accent-cyan)' }} />
+                  <span style={{ fontSize: '0.8rem' }}>Contacts</span>
                 </button>
-              </form>
+              </div>
 
               <div className="step-actions">
                 <button 
@@ -858,25 +919,37 @@ export default function App() {
                         <label className="form-label" htmlFor="upi-input">
                           {upiProvider === 'custom' ? 'Enter UPI ID' : (upiProvider === 'gpay' ? 'Google Pay UPI / Phone Number' : 'Mobile Number')}
                         </label>
-                        <input
-                          id="upi-input"
-                          type={upiProvider === 'custom' ? 'text' : 'tel'}
-                          inputMode={upiProvider === 'custom' ? 'text' : 'numeric'}
-                          maxLength={upiProvider === 'custom' ? undefined : 10}
-                          className="form-input form-input-no-icon"
-                          placeholder={
-                            upiProvider === 'custom' 
-                              ? 'e.g. name@axisbank' 
-                              : 'e.g. 9876543210'
-                          }
-                          value={upiInput}
-                          onChange={(e) => {
-                            const val = upiProvider === 'custom' 
-                              ? e.target.value 
-                              : e.target.value.replace(/\D/g, '').slice(0, 10);
-                            setUpiInput(val);
-                          }}
-                        />
+                        <div style={{ display: 'flex', gap: '0.4rem' }}>
+                          <input
+                            id="upi-input"
+                            type={upiProvider === 'custom' ? 'text' : 'tel'}
+                            inputMode={upiProvider === 'custom' ? 'text' : 'numeric'}
+                            maxLength={upiProvider === 'custom' ? undefined : 10}
+                            className="form-input form-input-no-icon"
+                            style={{ flex: 1 }}
+                            placeholder={
+                              upiProvider === 'custom' 
+                                ? 'e.g. name@axisbank' 
+                                : 'e.g. 9876543210'
+                            }
+                            value={upiInput}
+                            onChange={(e) => {
+                              const val = upiProvider === 'custom' 
+                                ? e.target.value 
+                                : e.target.value.replace(/\D/g, '').slice(0, 10);
+                              setUpiInput(val);
+                            }}
+                          />
+                          <button 
+                            type="button" 
+                            onClick={handleImportContact} 
+                            className="btn btn-secondary btn-action-sm"
+                            style={{ width: 'auto', padding: '0.6rem 0.75rem' }}
+                            title="Import contact number from device"
+                          >
+                            <Contact size={16} style={{ color: 'var(--accent-cyan)' }} />
+                          </button>
+                        </div>
                       </div>
                     </div>
 
@@ -937,13 +1010,11 @@ export default function App() {
                     )}
 
                     {upiId && (
-                      <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.6rem', background: 'rgba(6, 182, 212, 0.06)', padding: '0.45rem 0.75rem', borderRadius: '6px', border: '1px solid rgba(6, 182, 212, 0.15)' }}>
-                        <div>Generated UPI Target: <span className="accent-text" style={{ fontWeight: 700 }}>{upiId}</span></div>
-                        {upiProvider === 'gpay' && (
-                          <div style={{ fontSize: '0.72rem', color: 'var(--accent-teal)', marginTop: '0.25rem' }}>
-                            ✓ Using Google Pay UPI Number ({upiId}) directly for payments.
-                          </div>
-                        )}
+                      <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.6rem', background: 'rgba(6, 182, 212, 0.06)', padding: '0.55rem 0.75rem', borderRadius: '6px', border: '1px solid rgba(6, 182, 212, 0.15)' }}>
+                        <div>Target UPI VPA: <span className="accent-text" style={{ fontWeight: 700 }}>{upiId}</span></div>
+                        <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.3rem', lineHeight: 1.35 }}>
+                          💡 <strong>Why UPI ID works best:</strong> External QR codes require your registered VPA (e.g. <strong>name@oksbi</strong>). If phone number fails, select <strong>Custom UPI ID</strong> and enter your exact GPay UPI ID.
+                        </div>
                       </div>
                     )}
 
@@ -1222,23 +1293,48 @@ export default function App() {
                       </div>
                     )}
                     {upiId && (
-                      <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.45rem' }}>
-                        UPI ID: <span style={{ color: 'var(--accent-cyan)', fontWeight: 600 }}>{upiId}</span>
-                      </p>
+                      <div style={{ marginTop: '0.45rem' }}>
+                        <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                          UPI ID: <span style={{ color: 'var(--accent-cyan)', fontWeight: 600 }}>{upiId}</span>
+                        </p>
+                        <p style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
+                          If GPay says "No account registered", tap <strong>@okaxis</strong>, <strong>@okhdfcbank</strong>, <strong>@okicici</strong>, or select <strong>Custom UPI ID</strong> above.
+                        </p>
+                      </div>
                     )}
                   </div>
                 )}
 
                 {upiString && (
-                  <div className="mobile-only-btn">
+                  <div className="mobile-only-btn" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                     <button 
                       type="button"
-                      onClick={handlePayViaUpi}
+                      onClick={(e) => handlePayViaUpi(e, false)}
                       className="btn btn-primary"
                       style={{ width: '100%', justifyContent: 'center' }}
                     >
                       Pay via {getProviderDisplayName()}
                       <ExternalLink size={14} />
+                    </button>
+
+                    <button 
+                      type="button"
+                      onClick={(e) => handlePayViaUpi(e, true)}
+                      className="btn btn-secondary"
+                      style={{ width: '100%', justifyContent: 'center', fontSize: '0.82rem', padding: '0.5rem 0.75rem' }}
+                    >
+                      Open in Any UPI App (Universal)
+                      <ExternalLink size={13} />
+                    </button>
+
+                    <button 
+                      type="button"
+                      onClick={handleShareToWhatsApp}
+                      className="btn btn-secondary"
+                      style={{ width: '100%', justifyContent: 'center', fontSize: '0.82rem', padding: '0.5rem 0.75rem', borderColor: 'rgba(34, 197, 94, 0.3)', color: '#4ade80' }}
+                    >
+                      <Share2 size={14} />
+                      Share Split on WhatsApp
                     </button>
                   </div>
                 )}
